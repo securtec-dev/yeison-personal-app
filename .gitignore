@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+*.sqlite3
+.pytest_cache/
+media/
+staticfiles/
+celerybeat-schedule*
+node_modules/
+dist/
+.vite/
+.idea/
+.vscode/
+.railway/

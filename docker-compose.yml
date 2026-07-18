@@ -1,0 +1,100 @@
+name: casa-yeison
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-casa_yeison}
+      POSTGRES_USER: ${POSTGRES_USER:-casa_yeison}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casa_yeison_local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casa_yeison} -d ${POSTGRES_DB:-casa_yeison}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: &backend-environment
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-casa-yeison-secret-key-change-me}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-casa_yeison}
+      POSTGRES_USER: ${POSTGRES_USER:-casa_yeison}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casa_yeison_local}
+      REDIS_URL: redis://redis:6379/0
+      APP_PIN: ${APP_PIN:-2580}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
+      TZ: America/Costa_Rica
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    ports:
+      - "8016:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A config worker --loglevel=info --concurrency=2
+    environment: *backend-environment
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    environment: *backend-environment
+    volumes:
+      - ./backend:/app
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_SHOW_DEV_PIN: "true"
+    restart: unless-stopped
+    ports:
+      - "5186:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:

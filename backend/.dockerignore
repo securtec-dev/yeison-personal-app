@@ -1,0 +1,6 @@
+__pycache__
+*.py[cod]
+media
+staticfiles
+celerybeat-schedule*
+.pytest_cache
